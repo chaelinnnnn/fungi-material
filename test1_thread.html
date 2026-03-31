@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Test 1 — Mycelium Thread</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0c0c0a; overflow:hidden; width:100vw; height:100vh; cursor:none; }
+canvas { display:block; position:fixed; inset:0; }
+#title {
+  position:fixed; top:28px; left:36px;
+  font-family:'Courier New',monospace; font-size:10px; letter-spacing:0.22em;
+  color:rgba(255,255,255,0.1); text-transform:uppercase; pointer-events:none;
+}
+#label {
+  position:fixed; bottom:28px; left:50%; transform:translateX(-50%);
+  font-family:'Courier New',monospace; font-size:10px; letter-spacing:0.22em;
+  color:rgba(255,255,255,0.1); text-transform:uppercase; pointer-events:none;
+}
+#reset {
+  position:fixed; top:24px; right:36px;
+  font-family:'Courier New',monospace; font-size:10px; letter-spacing:0.18em;
+  color:rgba(255,255,255,0.18); background:none; border:1px solid rgba(255,255,255,0.1);
+  padding:5px 12px; cursor:pointer; text-transform:uppercase; transition:all 0.3s;
+}
+#reset:hover { color:rgba(255,255,255,0.6); border-color:rgba(255,255,255,0.3); }
+</style>
+</head>
+<body>
+<div id="title">Test 01 — Mycelium Thread</div>
+<canvas id="c"></canvas>
+<button id="reset" onclick="reset()">Clear</button>
+<div id="label">Move cursor — threads tangle and persist</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W = canvas.width = window.innerWidth;
+let H = canvas.height = window.innerHeight;
+
+let mouse = {x: W/2, y: H/2, px: W/2, py: H/2};
+let threads = [];
+let nodes = []; // anchor points threads connect to
+
+// Each thread segment
+function addSegment(x1, y1, x2, y2) {
+  const dx = x2-x1, dy = y2-y1;
+  const len = Math.sqrt(dx*dx+dy*dy);
+  if (len < 1) return;
+  // Split into fine filaments
+  const count = Math.floor(Math.random()*3)+1;
+  for (let i = 0; i < count; i++) {
+    const wobble = (Math.random()-0.5)*6;
+    const wx = -dy/len*wobble, wy = dx/len*wobble;
+    threads.push({
+      x1: x1+wx, y1: y1+wy,
+      x2: x2+(Math.random()-0.5)*4,
+      y2: y2+(Math.random()-0.5)*4,
+      opacity: 0.55+Math.random()*0.35,
+      width: Math.random()*0.8+0.2,
+      cp: { // control point for curve
+        x: (x1+x2)/2 + (Math.random()-0.5)*20,
+        y: (y1+y2)/2 + (Math.random()-0.5)*20,
+      },
+      age: 0,
+    });
+  }
+}
+
+// Occasionally spawn branching node
+let lastNode = 0;
+function tryNode(x, y) {
+  if (Date.now() - lastNode > 300 && Math.random() < 0.25) {
+    nodes.push({x, y, r: Math.random()*2+1, opacity: 0.3+Math.random()*0.3});
+    lastNode = Date.now();
+  }
+}
+
+function reset() {
+  threads = []; nodes = [];
+  ctx.clearRect(0, 0, W, H);
+  offCtx.clearRect(0, 0, W, H);
+}
+
+// Persistent offscreen
+const off = document.createElement('canvas');
+let offCtx;
+function initOff() {
+  off.width = W; off.height = H;
+  offCtx = off.getContext('2d');
+}
+
+let isMoving = false;
+let lastAdd = 0;
+
+function draw(ts) {
+  requestAnimationFrame(draw);
+
+  // Render new threads to offscreen
+  if (threads.length > 0) {
+    const fresh = threads.filter(t => t.age === 0);
+    for (const t of fresh) {
+      offCtx.beginPath();
+      offCtx.moveTo(t.x1, t.y1);
+      offCtx.quadraticCurveTo(t.cp.x, t.cp.y, t.x2, t.y2);
+      offCtx.strokeStyle = `rgba(210,205,190,${t.opacity})`;
+      offCtx.lineWidth = t.width;
+      offCtx.lineCap = 'round';
+      offCtx.stroke();
+      t.age++;
+    }
+    for (const n of nodes.filter(n => n.age === undefined)) {
+      offCtx.beginPath();
+      offCtx.arc(n.x, n.y, n.r, 0, Math.PI*2);
+      offCtx.fillStyle = `rgba(210,205,190,${n.opacity})`;
+      offCtx.fill();
+      n.age = 0;
+    }
+  }
+
+  // Draw offscreen to canvas
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0c0c0a';
+  ctx.fillRect(0, 0, W, H);
+  ctx.drawImage(off, 0, 0);
+
+  // Cursor — fine cross
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(mouse.x-8, mouse.y); ctx.lineTo(mouse.x+8, mouse.y);
+  ctx.moveTo(mouse.x, mouse.y-8); ctx.lineTo(mouse.x, mouse.y+8);
+  ctx.stroke();
+}
+
+window.addEventListener('mousemove', e => {
+  mouse.px = mouse.x; mouse.py = mouse.y;
+  mouse.x = e.clientX; mouse.y = e.clientY;
+  const dx = mouse.x-mouse.px, dy = mouse.y-mouse.py;
+  const dist = Math.sqrt(dx*dx+dy*dy);
+  if (dist > 2) {
+    addSegment(mouse.px, mouse.py, mouse.x, mouse.y);
+    tryNode(mouse.x, mouse.y);
+  }
+});
+
+window.addEventListener('resize', () => {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  initOff();
+});
+
+initOff();
+draw();
+</script>
+</body>
+</html>

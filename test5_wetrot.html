@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Test 5 — Wet Rot</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0e0e0c; overflow:hidden; width:100vw; height:100vh; cursor:none; }
+canvas { display:block; position:fixed; inset:0; }
+#title {
+  position:fixed; top:28px; left:36px;
+  font-family:'Courier New',monospace; font-size:10px; letter-spacing:0.22em;
+  color:rgba(255,255,255,0.08); text-transform:uppercase; pointer-events:none;
+}
+#label {
+  position:fixed; bottom:28px; left:50%; transform:translateX(-50%);
+  font-family:'Courier New',monospace; font-size:10px; letter-spacing:0.22em;
+  color:rgba(255,255,255,0.08); text-transform:uppercase; pointer-events:none;
+}
+#reset {
+  position:fixed; top:24px; right:36px;
+  font-family:'Courier New',monospace; font-size:10px; letter-spacing:0.18em;
+  color:rgba(255,255,255,0.15); background:none; border:1px solid rgba(255,255,255,0.08);
+  padding:5px 12px; cursor:pointer; text-transform:uppercase; transition:all 0.3s;
+}
+#reset:hover { color:rgba(255,255,255,0.5); border-color:rgba(255,255,255,0.25); }
+</style>
+</head>
+<body>
+<div id="title">Test 05 — Wet Rot</div>
+<canvas id="c"></canvas>
+<button id="reset" onclick="resetAll()">Clear</button>
+<div id="label">Click and drag — viscous rot spreads and clings</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W = canvas.width = window.innerWidth;
+let H = canvas.height = window.innerHeight;
+let mouse = {x: W/2, y: H/2, px: W/2, py: H/2, down: false};
+
+// Blob system — viscous masses
+let blobs = [];
+let strings = []; // sticky strings between blobs
+let trail = []; // mouse trail
+
+function noise(x, y, t) {
+  return (Math.sin(x*0.09+y*0.06+t)*0.5 + Math.sin(x*0.04-y*0.11-t*0.7)*0.3 + Math.sin(x*0.22+y*0.18+t*0.5)*0.2 + 1) / 2;
+}
+
+function spawnRot(cx, cy) {
+  const count = Math.floor(Math.random()*5)+3;
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random()*Math.PI*2;
+    const d = Math.random()*30;
+    blobs.push({
+      x: cx+Math.cos(angle)*d,
+      y: cy+Math.sin(angle)*d,
+      r: Math.random()*18+8,
+      vx: (Math.random()-0.5)*0.8,
+      vy: Math.random()*0.3+0.05,
+      opacity: 0.5+Math.random()*0.4,
+      phase: Math.random()*Math.PI*2,
+      age: 0,
+    });
+  }
+  // Connect with strings if nearby blobs exist
+  if (blobs.length > 5) {
+    const last = blobs[blobs.length-1];
+    const nearby = blobs.slice(0,-1).filter(b => {
+      const dx=b.x-last.x, dy=b.y-last.y;
+      return Math.sqrt(dx*dx+dy*dy) < 80;
+    });
+    for (const nb of nearby.slice(0,2)) {
+      strings.push({ a: last, b: nb, life: 1 });
+    }
+  }
+}
+
+function resetAll() {
+  blobs=[]; strings=[]; trail=[];
+  ctx.clearRect(0,0,W,H);
+  offCtx.clearRect(0,0,W,H);
+}
+
+// Persistent offscreen
+const off = document.createElement('canvas');
+let offCtx;
+function initOff() {
+  off.width=W; off.height=H;
+  offCtx=off.getContext('2d');
+  offCtx.fillStyle='#0e0e0c';
+  offCtx.fillRect(0,0,W,H);
+}
+
+let t = 0;
+function draw() {
+  requestAnimationFrame(draw);
+  t += 0.012;
+
+  // Slow fade on offscreen — rot persists
+  offCtx.fillStyle = 'rgba(14,14,12,0.015)';
+  offCtx.fillRect(0, 0, W, H);
+
+  // Update + render blobs to offscreen
+  for (const b of blobs) {
+    b.age++;
+    b.vy += 0.012; // gravity — sags
+    b.vx *= 0.97;
+    b.vy *= 0.97;
+    b.x += b.vx + Math.sin(t+b.phase)*0.15;
+    b.y += b.vy;
+
+    // Pulse — wet material breathes
+    const pulse = 1 + Math.sin(t*1.2+b.phase)*0.04;
+    const r = b.r * pulse;
+
+    // Draw viscous blob with noise-distorted edge
+    offCtx.beginPath();
+    const pts = 32;
+    for (let i = 0; i <= pts; i++) {
+      const angle = (i/pts)*Math.PI*2;
+      const n = noise(b.x+Math.cos(angle)*r*0.4, b.y+Math.sin(angle)*r*0.4, t*0.5);
+      const dr = r*(0.85+n*0.3);
+      const x = b.x+Math.cos(angle)*dr;
+      const y = b.y+Math.sin(angle)*dr;
+      i===0?offCtx.moveTo(x,y):offCtx.lineTo(x,y);
+    }
+    offCtx.closePath();
+
+    // Wet sheen — bright core, dark edge
+    const grad = offCtx.createRadialGradient(b.x-r*0.2, b.y-r*0.2, 0, b.x, b.y, r*1.2);
+    grad.addColorStop(0, `rgba(160,158,150,${b.opacity*0.9})`);
+    grad.addColorStop(0.5, `rgba(60,58,52,${b.opacity*0.7})`);
+    grad.addColorStop(1, `rgba(20,18,15,${b.opacity*0.4})`);
+    offCtx.fillStyle = grad;
+    offCtx.fill();
+
+    // Keep in bounds
+    if (b.y > H+b.r) { b.y=H+b.r; b.vy*=-0.1; }
+    if (b.x<-b.r||b.x>W+b.r) b.vx*=-1;
+  }
+
+  // Draw sticky strings
+  for (const s of strings) {
+    if (s.life <= 0) continue;
+    const dx=s.b.x-s.a.x, dy=s.b.y-s.a.y;
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    if (dist > 150) { s.life=0; continue; }
+    s.life = Math.max(0, 1-(dist/150));
+
+    // Droop midpoint
+    const mx=(s.a.x+s.b.x)/2, my=(s.a.y+s.b.y)/2+dist*0.25;
+    offCtx.beginPath();
+    offCtx.moveTo(s.a.x, s.a.y);
+    offCtx.quadraticCurveTo(mx, my, s.b.x, s.b.y);
+    offCtx.strokeStyle = `rgba(100,98,90,${s.life*0.5})`;
+    offCtx.lineWidth = s.life*1.5;
+    offCtx.stroke();
+  }
+  strings = strings.filter(s => s.life > 0.01);
+
+  ctx.clearRect(0,0,W,H);
+  ctx.drawImage(off,0,0);
+
+  // Cursor
+  ctx.beginPath();
+  ctx.arc(mouse.x, mouse.y, 4, 0, Math.PI*2);
+  ctx.fillStyle='rgba(180,178,170,0.4)';
+  ctx.fill();
+}
+
+let lastSpawn=0;
+canvas.addEventListener('mousedown', e => { mouse.down=true; spawnRot(e.clientX, e.clientY); });
+canvas.addEventListener('mouseup', () => mouse.down=false);
+window.addEventListener('mousemove', e => {
+  mouse.px=mouse.x; mouse.py=mouse.y;
+  mouse.x=e.clientX; mouse.y=e.clientY;
+  if (mouse.down && Date.now()-lastSpawn>60) { spawnRot(mouse.x, mouse.y); lastSpawn=Date.now(); }
+});
+window.addEventListener('resize', () => { W=canvas.width=window.innerWidth; H=canvas.height=window.innerHeight; initOff(); });
+initOff();
+draw();
+</script>
+</body>
+</html>

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Test 4 — Colony Skin</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#e8e4dc; overflow:hidden; width:100vw; height:100vh; cursor:crosshair; }
+canvas { display:block; position:fixed; inset:0; }
+#title {
+  position:fixed; top:28px; left:36px;
+  font-family:'Courier New',monospace; font-size:10px; letter-spacing:0.22em;
+  color:rgba(0,0,0,0.15); text-transform:uppercase; pointer-events:none;
+}
+#label {
+  position:fixed; bottom:28px; left:50%; transform:translateX(-50%);
+  font-family:'Courier New',monospace; font-size:10px; letter-spacing:0.22em;
+  color:rgba(0,0,0,0.12); text-transform:uppercase; pointer-events:none;
+}
+#reset {
+  position:fixed; top:24px; right:36px;
+  font-family:'Courier New',monospace; font-size:10px; letter-spacing:0.18em;
+  color:rgba(0,0,0,0.2); background:none; border:1px solid rgba(0,0,0,0.12);
+  padding:5px 12px; cursor:pointer; text-transform:uppercase; transition:all 0.3s;
+}
+#reset:hover { color:rgba(0,0,0,0.6); border-color:rgba(0,0,0,0.3); }
+</style>
+</head>
+<body>
+<div id="title">Test 04 — Colony Skin</div>
+<canvas id="c"></canvas>
+<button id="reset" onclick="init()">Reset</button>
+<div id="label">Click to seed a colony — skin folds as it grows</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W = canvas.width = window.innerWidth;
+let H = canvas.height = window.innerHeight;
+
+let colonies = [];
+
+function noise(x, y, t) {
+  return (
+    Math.sin(x*0.08 + y*0.05 + t*0.3)*0.4 +
+    Math.sin(x*0.15 - y*0.12 + t*0.2)*0.3 +
+    Math.sin(x*0.04 + y*0.09 - t*0.15)*0.2 +
+    Math.sin(x*0.31 + y*0.27 + t*0.4)*0.1
+  ) * 0.5 + 0.5;
+}
+
+function addColony(cx, cy) {
+  colonies.push({
+    cx, cy,
+    radius: 5,
+    maxRadius: Math.random()*120+80,
+    age: 0,
+    rings: [],
+    done: false,
+  });
+}
+
+function init() {
+  colonies = [];
+  ctx.clearRect(0, 0, W, H);
+}
+
+let t = 0;
+function draw() {
+  requestAnimationFrame(draw);
+  t += 0.012;
+
+  ctx.fillStyle = 'rgba(232,228,220,0.18)';
+  ctx.fillRect(0, 0, W, H);
+
+  for (const col of colonies) {
+    if (!col.done) {
+      col.radius += 0.6;
+      col.age++;
+      if (col.radius >= col.maxRadius) col.done = true;
+
+      // Add a new contour ring every few frames
+      if (col.age % 8 === 0) {
+        col.rings.push({ r: col.radius, born: t });
+      }
+    }
+
+    // Draw contour rings (wrinkled colony surface)
+    for (const ring of col.rings) {
+      const ringAge = t - ring.born;
+      const opacity = Math.max(0, 0.35 - ringAge * 0.012);
+      if (opacity <= 0) continue;
+
+      const pts = 180;
+      ctx.beginPath();
+      for (let i = 0; i <= pts; i++) {
+        const angle = (i / pts) * Math.PI * 2;
+        const wrinkle = noise(
+          col.cx + Math.cos(angle)*ring.r*0.3,
+          col.cy + Math.sin(angle)*ring.r*0.3,
+          t*0.5
+        );
+        const r = ring.r * (0.92 + wrinkle * 0.16);
+        const x = col.cx + Math.cos(angle) * r;
+        const y = col.cy + Math.sin(angle) * r;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.strokeStyle = `rgba(20,18,14,${opacity})`;
+      ctx.lineWidth = 0.6 + wrinkleWidth(ring.r, col.maxRadius);
+      ctx.stroke();
+    }
+
+    // Draw growing edge
+    if (!col.done) {
+      ctx.beginPath();
+      for (let i = 0; i <= 180; i++) {
+        const angle = (i/180)*Math.PI*2;
+        const w = noise(col.cx+Math.cos(angle)*col.radius*0.25, col.cy+Math.sin(angle)*col.radius*0.25, t);
+        const r = col.radius*(0.9+w*0.18);
+        const x = col.cx+Math.cos(angle)*r;
+        const y = col.cy+Math.sin(angle)*r;
+        i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+      }
+      ctx.closePath();
+      ctx.strokeStyle = 'rgba(20,18,14,0.5)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+  }
+}
+
+function wrinkleWidth(r, max) {
+  return 0.3 + (r/max)*0.7;
+}
+
+canvas.addEventListener('click', e => addColony(e.clientX, e.clientY));
+window.addEventListener('resize', () => { W=canvas.width=window.innerWidth; H=canvas.height=window.innerHeight; });
+draw();
+</script>
+</body>
+</html>
